@@ -10,7 +10,118 @@ import (
 	"github.com/fatih/color"
 	"github.com/trufflesecurity/trufflehog/v3/pkg/analyzer/analyzers"
 	"github.com/trufflesecurity/trufflehog/v3/pkg/analyzer/config"
+	"github.com/trufflesecurity/trufflehog/v3/pkg/analyzer/pb/analyzerpb"
+	"github.com/trufflesecurity/trufflehog/v3/pkg/context"
 )
+
+var _ analyzers.Analyzer = (*Analyzer)(nil)
+
+type Analyzer struct {
+	Cfg *config.Config
+}
+
+func (Analyzer) Type() analyzerpb.AnalyzerType { return analyzerpb.AnalyzerType_Twilio }
+
+func (a Analyzer) Analyze(_ context.Context, credInfo map[string]string) (*analyzers.AnalyzerResult, error) {
+	info, err := AnalyzePermissions(a.Cfg, credInfo["key"])
+	if err != nil {
+		return nil, err
+	}
+	return secretInfoToAnalyzerResult(info), nil
+}
+
+func secretInfoToAnalyzerResult(info *SecretInfo) *analyzers.AnalyzerResult {
+	if info == nil {
+		return nil
+	}
+
+	if info.VerifyJson.Code == INVALID_CREDENTIALS {
+		return nil
+	}
+
+	result := &analyzers.AnalyzerResult{
+		AnalyzerType: analyzerpb.AnalyzerType_Twilio,
+		Metadata: map[string]any{
+			"verify_json":         info.VerifyJson,
+			"account_status_code": info.AccountStatusCode,
+		},
+	}
+
+	if info.VerifyJson.Code == AUTHENTICATED_NO_PERMISSION {
+		result.Bindings = getRestrictedKeyBindings()
+		return result
+	}
+
+	result.Bindings = getPermissionBindings(info.AccountStatusCode)
+	return result
+}
+
+// getPermissionBindings returns the permissions based on the status code
+// 200 means the key is main, 401 means the key is standard
+func getPermissionBindings(statusCode int) []analyzers.Binding {
+
+	if statusCode != 200 && statusCode != 401 {
+		return []analyzers.Binding{}
+	}
+
+	if statusCode == 401 {
+		return []analyzers.Binding{
+			{
+				Resource: analyzers.Resource{
+					Name:               "All EXCEPT key management and account/subaccount configuration.",
+					FullyQualifiedName: "All EXCEPT key management and account/subaccount configuration.",
+					Type:               "all",
+					Metadata:           nil,
+					Parent:             nil,
+				},
+				Permission: analyzers.Permission{
+					Value:       "All EXCEPT key management and account/subaccount configuration.",
+					AccessLevel: "standard",
+					Parent:      nil,
+				},
+			},
+		}
+	}
+
+	return []analyzers.Binding{
+		{
+			Resource: analyzers.Resource{
+				Name:               "All",
+				FullyQualifiedName: "All",
+				Type:               "all",
+				Metadata:           nil,
+				Parent:             nil,
+			},
+			Permission: analyzers.Permission{
+				Value:       "All",
+				AccessLevel: "main (admin)",
+				Parent:      nil,
+			},
+		},
+	}
+}
+
+// getRestrictedKeyBindings returns the bindings for a restricted key
+// this is a temporary measure since the restricted key type is still in beta
+func getRestrictedKeyBindings() []analyzers.Binding {
+
+	return []analyzers.Binding{
+		{
+			Resource: analyzers.Resource{
+				Name:               "All",
+				FullyQualifiedName: "All",
+				Type:               "all",
+				Metadata:           nil,
+				Parent:             nil,
+			},
+			Permission: analyzers.Permission{
+				Value:       "restricted",
+				AccessLevel: "restricted",
+				Parent:      nil,
+			},
+		},
+	}
+}
 
 type VerifyJSON struct {
 	Code int `json:"code"`
