@@ -66,7 +66,7 @@ func (s Scanner) FromData(ctx context.Context, verify bool, data []byte) (result
 			resSecret := strings.TrimSpace(secretMatch[1])
 
 			/*
-				as both agora key and secretMatch has same regex, the set of strings keyMatch for both probably me same.
+				as both agora key and secretMatch has same regex, the set of strings keyMatch for both probably be the same.
 				we need to avoid the scenario where key is same as secretMatch. This will reduce the number of matches we process.
 			*/
 			if resMatch == resSecret {
