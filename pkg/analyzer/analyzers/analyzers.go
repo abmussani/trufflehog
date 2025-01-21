@@ -80,6 +80,7 @@ const (
 	AnalyzerTypeSquare
 	AnalyzerTypeStripe
 	AnalyzerTypeTwilio
+	AnalyzerTypePlanetScale
 	// Add new items here with AnalyzerType prefix
 )
 
@@ -106,6 +107,7 @@ var analyzerTypeStrings = map[AnalyzerType]string{
 	AnalyzerTypeSquare:      "Square",
 	AnalyzerTypeStripe:      "Stripe",
 	AnalyzerTypeTwilio:      "Twilio",
+	AnalyzerTypePlanetScale: "PlanetScale",
 	// Add new mappings here
 }
 
