@@ -81,6 +81,7 @@ const (
 	AnalyzerTypeStripe
 	AnalyzerTypeTwilio
 	AnalyzerTypePrivateKey
+	AnalyzerTypePlanetScale
 	// Add new items here with AnalyzerType prefix
 )
 
@@ -108,7 +109,7 @@ var analyzerTypeStrings = map[AnalyzerType]string{
 	AnalyzerTypeStripe:      "Stripe",
 	AnalyzerTypeTwilio:      "Twilio",
 	AnalyzerTypePrivateKey:  "PrivateKey",
-	// Add new mappings here
+	AnalyzerTypePlanetScale: "PlanetScale",
 }
 
 // String method to get the string representation of an AnalyzerType.
