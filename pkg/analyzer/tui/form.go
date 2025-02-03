@@ -45,6 +45,17 @@ func NewFormPage(c *common.Common, keyType string) FormPage {
 			Key:      "url",
 			Required: true,
 		}}
+	case "planetscale":
+		inputs = []textinputs.InputConfig{{
+			Label:    "Service Id",
+			Key:      "id",
+			Required: true,
+		}, {
+			Label:       "Service Token",
+			Key:         "token",
+			Required:    true,
+			RedactInput: true,
+		}}
 	default:
 		inputs = []textinputs.InputConfig{{
 			Label:       "Secret",

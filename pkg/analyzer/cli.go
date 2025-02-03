@@ -107,6 +107,6 @@ func Run(cmd string) {
 	case "privatekey":
 		privatekey.AnalyzeAndPrintPermissions(secretInfo.Cfg, secretInfo.Parts["key"])
 	case "planetscale":
-		planetscale.AnalyzeAndPrintPermissions(secretInfo.Cfg, secretInfo.Parts["id"], secretInfo.Parts["key"])
+		planetscale.AnalyzeAndPrintPermissions(secretInfo.Cfg, secretInfo.Parts["id"], secretInfo.Parts["token"])
 	}
 }
