@@ -1,11 +1,8 @@
 package aws
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/base32"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -71,19 +68,6 @@ func GetAccountNumFromID(id string) (string, error) {
 	const mask uint64 = 0x7fffffffff80
 	accountNum := (z & mask) >> 7
 	return fmt.Sprintf("%012d", accountNum), nil
-}
-
-func GetHash(input string) string {
-	data := []byte(input)
-	hasher := sha256.New()
-	hasher.Write(data)
-	return hex.EncodeToString(hasher.Sum(nil))
-}
-
-func GetHMAC(key []byte, data []byte) []byte {
-	hasher := hmac.New(sha256.New, key)
-	hasher.Write(data)
-	return hasher.Sum(nil)
 }
 
 func CleanResults(results []detectors.Result) []detectors.Result {
