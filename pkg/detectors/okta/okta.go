@@ -13,7 +13,7 @@ import (
 	"github.com/trufflesecurity/trufflehog/v3/pkg/pb/detectorspb"
 )
 
-type Scanner struct{
+type Scanner struct {
 	detectors.DefaultMultiPartCredentialProvider
 }
 
@@ -34,9 +34,11 @@ func (s Scanner) Keywords() []string {
 
 // FromData will find and optionally verify Okta secrets in a given set of bytes.
 func (s Scanner) FromData(ctx context.Context, verify bool, data []byte) (results []detectors.Result, err error) {
-	for _, tokenMatch := range tokenPat.FindAll(data, -1) {
-		token := string(tokenMatch)
-
+	tokenMatches := make(map[string]struct{})
+	for _, match := range tokenPat.FindAll(data, -1) {
+		tokenMatches[string(match)] = struct{}{}
+	}
+	for token, _ := range tokenMatches {
 		for _, domainMatch := range domainPat.FindAll(data, -1) {
 			domain := string(domainMatch)
 
@@ -47,33 +49,9 @@ func (s Scanner) FromData(ctx context.Context, verify bool, data []byte) (result
 			}
 
 			if verify {
-				// curl -v -X GET \
-				// -H "Accept: application/json" \
-				// -H "Content-Type: application/json" \
-				// -H "Authorization: Bearer token" \
-				// "https://subdomain.okta.com/api/v1/users/me"
-				//
-
-				url := fmt.Sprintf("https://%s/api/v1/users/me", domain)
-				req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-				if err != nil {
-					return results, err
-				}
-				req.Header.Set("Accept", "application/json")
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("Authorization", fmt.Sprintf("SSWS %s", token))
-
-				resp, err := detectors.DetectorHttpClientWithNoLocalAddresses.Do(req)
-				if err != nil {
-					continue
-				}
-				defer resp.Body.Close()
-				if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-					body, _ := io.ReadAll(resp.Body)
-					if strings.Contains(string(body), "activated") {
-						result.Verified = true
-					}
-				}
+				isVerified, err := verifyToken(ctx, domain, token)
+				result.Verified = isVerified
+				result.SetVerificationError(err, token)
 			}
 
 			results = append(results, result)
@@ -89,4 +67,40 @@ func (s Scanner) Type() detectorspb.DetectorType {
 
 func (s Scanner) Description() string {
 	return "Okta is an identity and access management service. Okta tokens can be used to authenticate and access various resources and APIs within an organization."
+}
+
+func verifyToken(ctx context.Context, domain, token string) (bool, error) {
+	// curl -v -X GET \
+	// -H "Accept: application/json" \
+	// -H "Content-Type: application/json" \
+	// -H "Authorization: Bearer token" \
+	// "https://subdomain.okta.com/api/v1/users/me"
+	//
+
+	url := fmt.Sprintf("https://%s/api/v1/users/me", domain)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("SSWS %s", token))
+
+	resp, err := detectors.DetectorHttpClientWithNoLocalAddresses.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		body, _ := io.ReadAll(resp.Body)
+		if strings.Contains(string(body), "activated") {
+			return true, nil
+		}
+		return false, nil
+	case http.StatusUnauthorized:
+		return false, nil
+	default:
+		return false, fmt.Errorf("unexpected status code %d", resp.StatusCode)
+	}
 }
