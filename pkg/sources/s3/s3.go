@@ -439,7 +439,7 @@ func (s *Source) pageChunker(
 			return
 		}
 
-		skipObject, reason := s.needSkipObject(ctx, objIdx, obj, metadata)
+		skipObject, reason := s.shouldSkipObject(ctx, objIdx, obj, metadata)
 		if skipObject {
 			s.metricsCollector.RecordObjectSkipped(metadata.bucket, reason, float64(*obj.Size))
 			if err := s.checkpointer.UpdateObjectCompletion(ctx, objIdx, metadata.bucket, metadata.page.Contents); err != nil {
@@ -464,7 +464,12 @@ func (s *Source) pageChunker(
 				ctx.Logger().V(2).Info("Skipped due to excessive errors")
 				return nil
 			}
-			res, err := s.getObject(ctx, metadata.client, *obj.Key, metadata.bucket, *obj.Size)
+			// Make sure we use a separate context for the GetObjectWithContext call.
+			// This ensures that the timeout is isolated and does not affect any downstream operations. (e.g. HandleFile)
+			const getObjectTimeout = 30 * time.Second
+			objCtx, cancel := context.WithTimeout(ctx, getObjectTimeout)
+			defer cancel()
+			res, err := s.getObject(objCtx, metadata.client, *obj.Key, metadata.bucket, *obj.Size)
 			if err != nil {
 				if strings.Contains(err.Error(), "AccessDenied") {
 					ctx.Logger().Error(err, "could not get S3 object; access denied")
@@ -634,7 +639,6 @@ func (s *Source) handleFileChunk(
 
 	if err := handlers.HandleFile(ctx, objRes.Body, chunkSkel, reporter); err != nil {
 		ctx.Logger().Error(err, "error handling file")
-		s.metricsCollector.RecordObjectError(bucket)
 		return err
 	}
 	return nil
@@ -642,13 +646,7 @@ func (s *Source) handleFileChunk(
 
 // Get S3 Object with error handling
 func (s *Source) getObject(ctx context.Context, client *s3.Client, key, bucket string, size int64) (*s3.GetObjectOutput, error) {
-	// Make sure we use a separate context for the GetObjectWithContext call.
-	// This ensures that the timeout is isolated and does not affect any downstream operations. (e.g. HandleFile)
-	const getObjectTimeout = 30 * time.Second
-	objCtx, cancel := context.WithTimeout(ctx, getObjectTimeout)
-	defer cancel()
-
-	res, err := client.GetObject(objCtx, &s3.GetObjectInput{
+	res, err := client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &bucket,
 		Key:    &key,
 	})
@@ -665,8 +663,8 @@ func (s *Source) getObject(ctx context.Context, client *s3.Client, key, bucket s
 	return res, nil
 }
 
-// Decides and handles if an object has to be skipped while scanning/enumerating
-func (s *Source) needSkipObject(ctx context.Context, objIdx int, obj s3types.Object, metadata pageMetadata) (bool, string) {
+// Decides if an object should be skipped while scanning/enumerating
+func (s *Source) shouldSkipObject(ctx context.Context, objIdx int, obj s3types.Object, metadata pageMetadata) (bool, string) {
 	// Skip GLACIER and GLACIER_IR objects.
 	if obj.StorageClass == s3types.ObjectStorageClassGlacier || obj.StorageClass == s3types.ObjectStorageClassGlacierIr {
 		ctx.Logger().V(5).Info("Skipping object in storage class", "storage_class", obj.StorageClass)
@@ -754,7 +752,7 @@ func (s *Source) Enumerate(ctx context.Context, reporter sources.UnitReporter) e
 
 				for objIdx, obj := range output.Contents {
 
-					skipObject, _ := s.needSkipObject(ctx, objIdx, obj, metadata)
+					skipObject, _ := s.shouldSkipObject(ctx, objIdx, obj, metadata)
 					if skipObject {
 						continue
 					}
@@ -780,7 +778,7 @@ func (s *Source) Enumerate(ctx context.Context, reporter sources.UnitReporter) e
 
 func (s *Source) ChunkUnit(ctx context.Context, unit sources.SourceUnit, reporter sources.ChunkReporter) error {
 
-	s3unit, ok := unit.(*S3SourceUnit)
+	s3unit, ok := unit.(S3SourceUnit)
 	if !ok {
 		return fmt.Errorf("expected *S3SourceUnit, got %T", unit)
 	}
@@ -798,7 +796,13 @@ func (s *Source) ChunkUnit(ctx context.Context, unit sources.SourceUnit, reporte
 		return reporter.ChunkErr(ctx, fmt.Errorf("unable to get regional client for bucket: %w", err))
 	}
 
-	res, err := s.getObject(ctx, client, objectKey, bucket, *s3unit.Object.Size)
+	// Make sure we use a separate context for the GetObjectWithContext call.
+	// This ensures that the timeout is isolated and does not affect any downstream operations. (e.g. HandleFile)
+	const getObjectTimeout = 30 * time.Second
+	objCtx, cancel := context.WithTimeout(ctx, getObjectTimeout)
+	defer cancel()
+
+	res, err := s.getObject(objCtx, client, objectKey, bucket, *s3unit.Object.Size)
 	if err != nil {
 		return reporter.ChunkErr(ctx, fmt.Errorf("unable to get object: %w", err))
 	}
